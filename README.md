@@ -44,15 +44,36 @@ pip install -r requirements.txt
 
 ## 🖥️ Sample Output
 
-Paste a sample of your app's CLI or Streamlit output here so a reader can see what a generated plan looks like:
+Running `python main.py` builds an owner (Jordan) with two pets — Biscuit (dog) and
+Mochi (cat) — and 12 care tasks, then prints the generated plan:
 
 ```
-# e.g.:
-# Daily plan for Biscuit (Golden Retriever):
-#   08:00 — Morning walk (30 min) [priority: high]
-#   09:00 — Feeding (10 min) [priority: high]
-#   ...
+================================================
+Today's Schedule
+================================================
+Daily plan for Jordan (budget: 200 min, used: 190 min)
+
+Scheduled:
+  08:00 — Medication for Mochi (5 min) [priority: high] — high priority, fits the remaining time
+  08:05 — Feeding for Biscuit (10 min) [priority: high] — high priority, fits the remaining time
+  08:15 — Evening feeding for Mochi (10 min) [priority: high] — high priority, fits the remaining time
+  08:25 — Morning walk for Biscuit (30 min) [priority: high] — high priority, fits the remaining time
+  08:55 — Litter box cleaning for Mochi (10 min) [priority: medium] — medium priority, fits the remaining time
+  09:05 — Enrichment puzzle for Biscuit (20 min) [priority: medium] — medium priority, fits the remaining time
+  09:25 — Training session for Biscuit (20 min) [priority: medium] — medium priority, fits the remaining time
+  09:45 — Evening walk for Biscuit (30 min) [priority: medium] — medium priority, fits the remaining time
+  10:15 — Play session for Mochi (15 min) [priority: low] — low priority, fits the remaining time
+  10:30 — Window watching for Mochi (15 min) [priority: low] — low priority, fits the remaining time
+  10:45 — Grooming for Biscuit (25 min) [priority: low] — low priority, fits the remaining time
+
+Skipped:
+  Bath for Biscuit (40 min) [priority: low] — needs 40 min but only 10 min left
 ```
+
+Tasks are scheduled highest-priority first (ties broken by shorter duration), packed
+back-to-back from 08:00 until the owner's time budget runs out. Here every HIGH and
+MEDIUM task fits; among the LOW tasks, only **Bath** (40 min) is skipped because just
+10 minutes remained — the plan explains that reason for every task.
 
 ## 🧪 Testing PawPal+
 

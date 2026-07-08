@@ -1,8 +1,10 @@
 classDiagram
     %% PawPal+ — priority + time-budget scheduler design.
-    %% Owner has an available-time budget; the Scheduler ranks tasks by
-    %% priority (then duration), fits them into the budget, skips the rest,
-    %% and produces a DailyPlan that can explain every decision.
+    %% An Owner cares for one or more Pets; each Pet owns its care Tasks.
+    %% The Scheduler collects every (pet, task) across the owner's pets,
+    %% ranks by priority (then duration), fits them into the owner's time
+    %% budget, skips the rest, and produces a DailyPlan that can explain
+    %% every decision.
 
     class Priority {
         <<enumeration>>
@@ -15,12 +17,15 @@ classDiagram
         +str name
         +int available_minutes
         +list~str~ preferences
+        +list~Pet~ pets
     }
 
     class Pet {
         +str name
         +str species
         +str breed
+        +list~Task~ tasks
+        +add_task(task) void
     }
 
     class Task {
@@ -28,18 +33,20 @@ classDiagram
         +int duration_minutes
         +Priority priority
         +str category
+        +str status
         +rank() int
+        +mark_complete() void
     }
 
     class PlanItem {
         +Task task
+        +Pet pet
         +str start_time
         +bool included
         +str reason
     }
 
     class DailyPlan {
-        +Pet pet
         +Owner owner
         +list~PlanItem~ items
         +list~PlanItem~ skipped
@@ -49,14 +56,16 @@ classDiagram
 
     class Scheduler {
         +int start_hour
-        +build_plan(owner, pet, tasks) DailyPlan
-        -sort_tasks(tasks) list~Task~
+        +build_plan(owner) DailyPlan
+        -collect_tasks(owner) list
+        -sort_tasks(pet_tasks) list
     }
 
-    Owner "1" --> "1" Pet : cares for
+    Owner "1" *-- "*" Pet : cares for
+    Pet "1" *-- "*" Task : needs
     Task --> Priority : has
-    Scheduler ..> Task : ranks & fits
-    Scheduler ..> Owner : reads budget
+    Scheduler ..> Owner : reads pets & budget
     Scheduler --> DailyPlan : creates
     DailyPlan "1" *-- "*" PlanItem : contains
     PlanItem "1" --> "1" Task : wraps
+    PlanItem "1" --> "1" Pet : for
