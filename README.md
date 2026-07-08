@@ -88,28 +88,62 @@ pytest --cov
 Sample test output:
 
 ```
-# Paste your pytest output here
+============================= test session starts ==============================
+platform darwin -- Python 3.13.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /Users/trang/Documents/AI101/Pawpal
+collected 25 items
+
+tests/test_pawpal.py .........................                          [100%]
+
+============================== 25 passed in 0.02s ==============================
 ```
+
+The suite covers ranking, sorting (including deterministic tie-breaking), the
+time-budget cutoff and skip reasons, `mark_complete()`, `add_task()`, recurring
+tasks (`next_occurrence()` / `complete_task()`, including month/year rollover),
+and edge cases like a zero-minute budget and a pet with no tasks.
 
 ## 📐 Smarter Scheduling
 
-> Fill in once you've implemented scheduling logic.
+Beyond building a basic plan, PawPal+ implements several scheduling behaviors.
+Each is a named method so it can be tested and reused independently of the UI.
 
 | Feature | Method(s) | Notes |
 |---------|-----------|-------|
-| Task sorting | | e.g., by priority, duration |
-| Filtering | | e.g., skip tasks if time runs out |
-| Conflict handling | | e.g., overlapping time slots |
-| Recurring tasks | | e.g., daily vs. weekly |
+| Priority + time-budget planning | `Scheduler.build_plan()`, `Task.rank()`, `Scheduler._sort_tasks()` | Ranks tasks by priority (HIGH→LOW) then shorter duration first, packs them back-to-back from `start_hour`, and skips any task that doesn't fit the remaining budget (recording the reason on its `PlanItem`) |
+| Sorting by time of day | `Scheduler.sort_by_time()` | Returns tasks ordered by their `"HH:MM"` time using a lambda key; untimed tasks sort last via a `"99:99"` sentinel. Does not mutate the input |
+| Filtering | `Owner.filter_tasks(status, pet_name)` | Returns tasks filtered by completion status and/or pet name; either filter is optional, so no arguments returns everything |
+| Conflict detection | `Scheduler.detect_conflicts()` | Groups all timed tasks by their `"HH:MM"` slot in one O(n) pass and returns a warning string for any slot claimed by 2+ tasks. Catches same-pet **and** cross-pet clashes, and returns warnings as data instead of raising |
+| Recurring tasks | `Task.next_occurrence()`, `Pet.complete_task()` | Completing a `daily`/`weekly` task auto-creates the next occurrence, advancing the due date with `timedelta` (handles month/year rollover). The follow-up starts `pending` |
+
+### Details
+
+**Sorting** — `sort_by_time()` relies on the fact that zero-padded 24-hour
+strings sort chronologically as plain text, so the key is simply
+`lambda t: t.time or "99:99"`.
+
+**Filtering** — `filter_tasks()` walks every pet's task list and keeps a task
+only if it matches all supplied filters. `owner.filter_tasks(status="pending")`,
+`owner.filter_tasks(pet_name="Mochi")`, or both together.
+
+**Conflict detection** — `detect_conflicts()` uses a *lightweight* strategy: it
+never raises. It returns a list like
+`["⚠️ Conflict at 08:00: 'Morning walk' (Biscuit), 'Backyard potty' (Biscuit)"]`,
+leaving the caller (CLI or Streamlit) to decide how to display it.
+
+**Recurring tasks** — because a `Task` doesn't hold a reference to its `Pet`,
+the recurrence is spawned by `Pet.complete_task()` (which owns the task list),
+while `Task.next_occurrence()` does the pure date math. A `once` task returns
+`None` and nothing is spawned.
 
 ## 📸 Demo Walkthrough
 
-Describe your app in numbered steps so a reader can follow along without watching a video:
+Launch the app with `streamlit run app.py`, then:
 
-1. <!-- Describe this step -->
-2. <!-- Describe this step -->
-3. <!-- Describe this step -->
-4. <!-- Describe this step -->
-5. <!-- Add more steps as needed -->
+1. **Set the owner and time budget** — enter the owner's name, how many minutes are available today (e.g. 200), and the hour the day starts (e.g. 8).
+2. **Add pets** — fill in a pet's name, species, breed, color, and age, then click **Add pet**. Repeat for each pet; they persist in the session as you go.
+3. **Add tasks to a pet** — pick a pet, type a task (e.g. "Morning walk"), set its duration and priority, and click **Add task**. Each pet's tasks appear in its expander.
+4. **Mark tasks complete** — click **Mark done** next to any task to flip its status (the title gets struck through).
+5. **Generate the schedule** — click **Generate schedule** to see the scheduled tasks with times, the skipped tasks with reasons, and an expandable "Why this plan?" explanation.
 
 **Screenshot or video** *(optional)*: <!-- Insert a screenshot or link to a demo video here -->

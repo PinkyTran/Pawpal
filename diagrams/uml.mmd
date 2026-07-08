@@ -18,14 +18,19 @@ classDiagram
         +int available_minutes
         +list~str~ preferences
         +list~Pet~ pets
+        +add_pet(pet) void
+        +filter_tasks(status, pet_name) list
     }
 
     class Pet {
         +str name
         +str species
         +str breed
+        +str color
+        +int age
         +list~Task~ tasks
         +add_task(task) void
+        +complete_task(task) Task
     }
 
     class Task {
@@ -33,9 +38,13 @@ classDiagram
         +int duration_minutes
         +Priority priority
         +str category
+        +str time
+        +str frequency
+        +date due_date
         +str status
         +rank() int
         +mark_complete() void
+        +next_occurrence() Task
     }
 
     class PlanItem {
@@ -57,6 +66,8 @@ classDiagram
     class Scheduler {
         +int start_hour
         +build_plan(owner) DailyPlan
+        +sort_by_time(tasks) list
+        +detect_conflicts(owner) list
         -collect_tasks(owner) list
         -sort_tasks(pet_tasks) list
     }

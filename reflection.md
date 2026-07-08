@@ -1,16 +1,34 @@
 # PawPal+ Project Reflection
 
+> Draft based on how the project actually came together — edit into your own
+> voice and add anything personal before submitting.
+
 ## 1. System Design
 
 **a. Initial design**
 
-- Briefly describe your initial UML design.
-- What classes did you include, and what responsibilities did you assign to each?
+My initial UML modeled seven pieces: a `Priority` enum (HIGH/MEDIUM/LOW), and
+classes for `Owner`, `Pet`, `Task`, `PlanItem`, `DailyPlan`, and `Scheduler`.
+The responsibilities were split so that the data classes stay simple and the
+`Scheduler` holds the logic:
+
+- `Owner` holds the constraint (the daily time budget) and the pets.
+- `Pet` holds descriptive traits and its own list of care tasks.
+- `Task` describes one activity (duration + priority) and can rank itself.
+- `Scheduler` ranks tasks and fits them into the budget — it's stateless.
+- `PlanItem` records one decision (which task, which pet, when, and why).
+- `DailyPlan` collects the scheduled and skipped items and can `explain()` them.
 
 **b. Design changes**
 
-- Did your design change during implementation?
-- If yes, describe at least one change and why you made it.
+Yes. The biggest change was the ownership structure. My first draft had the
+`Scheduler` take tasks as a separate argument and handle one pet. I changed it
+to an `Owner → Pet → Task` chain (an owner has pets, each pet owns its tasks),
+so `build_plan(owner)` now collects `(pet, task)` pairs across all pets. That
+meant adding a `pet` field to `PlanItem` so the plan could still say which pet
+each task belongs to. I also split `Task` from `PlanItem` deliberately: a `Task`
+is static input, while a `PlanItem` is the scheduler's decision about it — which
+kept the "explain why" data out of the raw task.
 
 ---
 
@@ -18,13 +36,23 @@
 
 **a. Constraints and priorities**
 
-- What constraints does your scheduler consider (for example: time, priority, preferences)?
-- How did you decide which constraints mattered most?
+The scheduler considers two constraints: the owner's **available minutes** (a
+hard time budget) and each task's **priority**. It sorts tasks by priority
+first (HIGH → LOW), breaking ties by shorter duration, then packs them
+back-to-back from a start hour until the budget runs out. I decided time and
+priority mattered most because they're what a busy owner actually feels — you
+have a fixed amount of time and you want the important things done first.
 
 **b. Tradeoffs**
 
-- Describe one tradeoff your scheduler makes.
-- Why is that tradeoff reasonable for this scenario?
+The scheduler is **greedy**: once a task doesn't fit, it keeps filling the
+leftover time with smaller tasks — even lower-priority ones. So a LOW-priority
+15-minute task can be scheduled while a MEDIUM 30-minute task is skipped. The
+tradeoff is "don't waste free minutes" vs. "strict priority order." I think it's
+reasonable here because leaving 15 minutes idle to protect a task that can't fit
+anyway doesn't help the pet — but it's a real tradeoff, and which task gets
+skipped is always the *longest task in the lowest tier that still has candidates*
+(deterministic, not random).
 
 ---
 
@@ -32,13 +60,20 @@
 
 **a. How you used AI**
 
-- How did you use AI tools during this project (for example: design brainstorming, debugging, refactoring)?
-- What kinds of prompts or questions were most helpful?
+I used AI across the whole workflow: brainstorming the UML, generating class
+stubs from the diagram, implementing the scheduling logic incrementally, writing
+tests, and wiring the logic into the Streamlit UI. The most helpful prompts were
+specific ones — e.g. asking how `st.session_state` persists objects across
+reruns, and asking what edge cases the design might miss.
 
 **b. Judgment and verification**
 
-- Describe one moment where you did not accept an AI suggestion as-is.
-- How did you evaluate or verify what the AI suggested?
+One moment I didn't accept a suggestion as-is: a test I wrote assumed tasks stay
+in the order I added them, but the scheduler correctly re-sorts by duration
+within a priority tier, so a shorter task scheduled first. The test failed —
+and the *code* was right, not the test. I fixed the test's expectation instead
+of changing correct code. I verified behavior by running `python main.py` and
+`pytest`, and by reading the plan's explanation to confirm the reasons matched.
 
 ---
 
@@ -46,13 +81,20 @@
 
 **a. What you tested**
 
-- What behaviors did you test?
-- Why were these tests important?
+I tested: priority ranking order; sorting by priority then duration; stable
+(deterministic) ordering for ties; the budget cutoff and the skip reasons; the
+greedy "fill leftover time" behavior; `total_minutes` accounting; sequential
+start times; `mark_complete()` changing status; `add_task()` growing a pet's
+task count; and edge cases (zero budget, a pet with no tasks). These matter
+because they're the behaviors a user actually relies on — that the important
+tasks come first and that nothing silently disappears without a reason.
 
 **b. Confidence**
 
-- How confident are you that your scheduler works correctly?
-- What edge cases would you test next if you had more time?
+Fairly confident — 15 tests pass and cover the core paths. With more time I'd
+test time-sensitive tasks (e.g. medication that must happen at a fixed hour),
+multiple pets competing for the same budget more aggressively, and rollover past
+midnight when the budget is very large.
 
 ---
 
@@ -60,12 +102,20 @@
 
 **a. What went well**
 
-- What part of this project are you most satisfied with?
+Separating the domain logic (`pawpal_system.py`) from the UI (`app.py`) so the
+same scheduler powers both the CLI demo and the Streamlit app, and so it could
+be tested without Streamlit at all.
 
 **b. What you would improve**
 
-- If you had another iteration, what would you improve or redesign?
+I'd add fixed-time tasks (so medication can be pinned to 8:00), make the
+`preferences` field actually influence the plan instead of being decorative, and
+give each pet its own share of the time budget instead of one shared pool.
 
 **c. Key takeaway**
 
-- What is one important thing you learned about designing systems or working with AI on this project?
+Designing the classes and relationships first (UML → stubs → logic) made the
+implementation much smoother, and keeping the diagram in sync with the code as
+the design changed kept everything honest. On the AI side, the biggest lesson
+was to verify suggestions by running them — the failing test caught a wrong
+assumption I'd have missed by just reading the code.

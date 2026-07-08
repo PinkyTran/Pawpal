@@ -7,30 +7,36 @@ st.set_page_config(page_title="PawPal+", page_icon="🐾", layout="centered")
 st.title("🐾 PawPal+")
 st.caption("Plan your pets' daily care around the time you actually have.")
 
-# --- session state ---------------------------------------------------------
-# Pets are stored as plain dicts so the widgets can edit them freely; the
-# pawpal_system objects are built fresh each time a plan is generated.
-if "pets" not in st.session_state:
-    st.session_state.pets = {}  # name -> {"species", "breed", "tasks": [ {..} ]}
-
 PRIORITIES = ["high", "medium", "low"]
 PRIORITY_ENUM = {"high": Priority.HIGH, "medium": Priority.MEDIUM, "low": Priority.LOW}
+
+# --- Step 2: the session "vault" -------------------------------------------
+# Streamlit re-runs this whole script on every interaction. If we created the
+# Owner here unconditionally it would be reborn empty each time, losing all the
+# pets and tasks. So we create it ONCE and keep the SAME instance in
+# st.session_state (a dict-like store that survives reruns), checking whether
+# it already exists before making a new one.
+if "owner" not in st.session_state:
+    st.session_state.owner = Owner(name="Jordan", available_minutes=200)
+
+owner = st.session_state.owner  # the persisted instance we mutate below
 
 # --- owner + constraints ---------------------------------------------------
 st.subheader("1. Owner & time budget")
 col_a, col_b, col_c = st.columns(3)
 with col_a:
-    owner_name = st.text_input("Owner name", value="Jordan")
+    owner.name = st.text_input("Owner name", value=owner.name)
 with col_b:
-    available_minutes = st.number_input(
-        "Time available today (min)", min_value=0, max_value=1440, value=200, step=5
+    owner.available_minutes = st.number_input(
+        "Time available today (min)", min_value=0, max_value=1440,
+        value=owner.available_minutes, step=5,
     )
 with col_c:
     start_hour = st.number_input("Start hour", min_value=0, max_value=23, value=8)
 
 st.divider()
 
-# --- add a pet -------------------------------------------------------------
+# --- Step 3: add a pet -> Owner.add_pet() ----------------------------------
 st.subheader("2. Pets")
 with st.form("add_pet", clear_on_submit=True):
     pc1, pc2, pc3 = st.columns(3)
@@ -39,45 +45,97 @@ with st.form("add_pet", clear_on_submit=True):
     with pc2:
         new_pet_species = st.selectbox("Species", ["dog", "cat", "other"])
     with pc3:
-        new_pet_breed = st.text_input("Breed (optional)", value="")
-    if st.form_submit_button("Add pet") and new_pet_name.strip():
-        st.session_state.pets.setdefault(
-            new_pet_name.strip(),
-            {"species": new_pet_species, "breed": new_pet_breed, "tasks": []},
-        )
+        new_pet_breed = st.text_input("Breed", value="")
+    pc4, pc5 = st.columns(2)
+    with pc4:
+        new_pet_color = st.text_input("Color", value="")
+    with pc5:
+        new_pet_age = st.number_input("Age (years)", min_value=0, max_value=40, value=0)
 
-if not st.session_state.pets:
+    if st.form_submit_button("Add pet"):
+        name = new_pet_name.strip()
+        existing = {p.name for p in owner.pets}
+        if not name:
+            st.warning("Please enter a pet name.")
+        elif name in existing:
+            st.warning(f"You already have a pet named {name}.")
+        else:
+            # The method on the class handles the data; the rerun after this
+            # submit re-reads owner.pets and shows the new pet automatically.
+            owner.add_pet(
+                Pet(
+                    name=name,
+                    species=new_pet_species,
+                    breed=new_pet_breed,
+                    color=new_pet_color,
+                    age=int(new_pet_age),
+                )
+            )
+
+if not owner.pets:
     st.info("Add at least one pet to get started.")
 
-# --- add tasks to a pet ----------------------------------------------------
-if st.session_state.pets:
+# --- Step 3: add a task -> Pet.add_task() ----------------------------------
+if owner.pets:
     st.subheader("3. Tasks")
     with st.form("add_task", clear_on_submit=True):
-        tc1, tc2, tc3, tc4 = st.columns([2, 2, 1, 1])
+        tc1, tc2, tc3 = st.columns([2, 2, 1])
         with tc1:
-            task_pet = st.selectbox("For pet", list(st.session_state.pets.keys()))
+            task_pet_name = st.selectbox("For pet", [p.name for p in owner.pets])
         with tc2:
             task_title = st.text_input("Task", value="Morning walk")
         with tc3:
             task_duration = st.number_input("Min", min_value=1, max_value=240, value=20)
+        tc4, tc5 = st.columns(2)
         with tc4:
             task_priority = st.selectbox("Priority", PRIORITIES, index=0)
+        with tc5:
+            task_frequency = st.selectbox("Repeats", ["once", "daily", "weekly"], index=0)
+
         if st.form_submit_button("Add task") and task_title.strip():
-            st.session_state.pets[task_pet]["tasks"].append(
-                {
-                    "title": task_title.strip(),
-                    "duration_minutes": int(task_duration),
-                    "priority": task_priority,
-                }
+            pet = next(p for p in owner.pets if p.name == task_pet_name)
+            pet.add_task(
+                Task(
+                    title=task_title.strip(),
+                    duration_minutes=int(task_duration),
+                    priority=PRIORITY_ENUM[task_priority],
+                    frequency=task_frequency,
+                )
             )
 
-    # show current pets + tasks, with a way to clear each pet's tasks
-    for name, info in st.session_state.pets.items():
-        with st.expander(f"🐾 {name} ({info['species']}) — {len(info['tasks'])} task(s)", expanded=True):
-            if info["tasks"]:
-                st.table(info["tasks"])
-                if st.button(f"Clear {name}'s tasks", key=f"clear_{name}"):
-                    info["tasks"] = []
+    # show current pets + their tasks (read straight off the Owner object)
+    for pet in owner.pets:
+        with st.expander(f"🐾 {pet.name} ({pet.species}) — {len(pet.tasks)} task(s)", expanded=True):
+            traits = []
+            if pet.breed:
+                traits.append(f"Breed: {pet.breed}")
+            if pet.color:
+                traits.append(f"Color: {pet.color}")
+            if pet.age:
+                traits.append(f"Age: {pet.age} yr")
+            if traits:
+                st.caption(" · ".join(traits))
+
+            if pet.tasks:
+                for idx, t in enumerate(pet.tasks):
+                    r1, r2, r3 = st.columns([5, 3, 2])
+                    done = t.status == "complete"
+                    title = f"~~{t.title}~~" if done else t.title
+                    r1.markdown(f"{'✅' if done else '⬜'} {title}")
+                    meta = f"{t.duration_minutes} min · {t.priority.value}"
+                    if t.frequency != "once":
+                        meta += f" · 🔁 {t.frequency}"
+                    r2.caption(meta)
+                    if done:
+                        r3.caption("done")
+                    elif r3.button("Mark done", key=f"done_{pet.name}_{idx}"):
+                        # completes the task; recurring tasks auto-spawn the next one
+                        nxt = pet.complete_task(t)
+                        if nxt is not None:
+                            st.toast(f"Next {t.title} scheduled for {nxt.due_date}")
+                        st.rerun()
+                if st.button(f"Clear {pet.name}'s tasks", key=f"clear_{pet.name}"):
+                    pet.tasks.clear()
                     st.rerun()
             else:
                 st.caption("No tasks yet.")
@@ -88,24 +146,8 @@ st.divider()
 st.subheader("4. Today's plan")
 st.caption("Tasks are scheduled highest-priority first and packed into your time budget.")
 
-if st.button("Generate schedule", type="primary", disabled=not st.session_state.pets):
-    pets = [
-        Pet(
-            name=name,
-            species=info["species"],
-            breed=info["breed"],
-            tasks=[
-                Task(
-                    title=t["title"],
-                    duration_minutes=t["duration_minutes"],
-                    priority=PRIORITY_ENUM[t["priority"]],
-                )
-                for t in info["tasks"]
-            ],
-        )
-        for name, info in st.session_state.pets.items()
-    ]
-    owner = Owner(name=owner_name, available_minutes=int(available_minutes), pets=pets)
+if st.button("Generate schedule", type="primary", disabled=not owner.pets):
+    # The Owner already holds everything the scheduler needs.
     plan = Scheduler(start_hour=int(start_hour)).build_plan(owner)
 
     m1, m2, m3 = st.columns(3)

@@ -3,6 +3,8 @@
 Run from the repo root with: pytest
 """
 
+from datetime import date
+
 import pytest
 
 from pawpal_system import DailyPlan, Owner, Pet, Priority, Scheduler, Task
@@ -47,6 +49,82 @@ def test_adding_task_increases_pet_task_count():
     assert len(pet.tasks) == 0
     pet.add_task(Task("Morning walk", 30, Priority.HIGH))
     assert len(pet.tasks) == 1
+
+
+# --- next_occurrence (recurrence date math) --------------------------------
+
+def test_next_occurrence_daily_adds_one_day():
+    t = Task("Meds", 5, Priority.HIGH, frequency="daily", due_date=date(2026, 7, 7))
+    assert t.next_occurrence().due_date == date(2026, 7, 8)
+
+
+def test_next_occurrence_weekly_adds_seven_days():
+    t = Task("Bath", 40, Priority.LOW, frequency="weekly", due_date=date(2026, 7, 7))
+    assert t.next_occurrence().due_date == date(2026, 7, 14)
+
+
+def test_next_occurrence_once_returns_none():
+    t = Task("Vet visit", 60, Priority.HIGH, frequency="once", due_date=date(2026, 7, 7))
+    assert t.next_occurrence() is None
+
+
+def test_next_occurrence_default_frequency_is_once():
+    # Not specifying frequency should behave as non-repeating.
+    assert Task("Walk", 30, Priority.HIGH).next_occurrence() is None
+
+
+def test_next_occurrence_rolls_over_month_end():
+    t = Task("Meds", 5, Priority.HIGH, frequency="daily", due_date=date(2026, 1, 31))
+    assert t.next_occurrence().due_date == date(2026, 2, 1)
+
+
+def test_next_occurrence_rolls_over_year_end():
+    t = Task("Meds", 5, Priority.HIGH, frequency="daily", due_date=date(2026, 12, 31))
+    assert t.next_occurrence().due_date == date(2027, 1, 1)
+
+
+def test_next_occurrence_with_no_due_date_uses_today():
+    from datetime import date as real_date, timedelta
+    t = Task("Meds", 5, Priority.HIGH, frequency="daily")  # due_date is None
+    assert t.next_occurrence().due_date == real_date.today() + timedelta(days=1)
+
+
+def test_next_occurrence_copies_attributes_and_resets_status():
+    t = Task("Meds", 5, Priority.HIGH, category="health", time="09:00",
+             frequency="daily", due_date=date(2026, 7, 7))
+    t.mark_complete()
+    nxt = t.next_occurrence()
+    assert nxt.title == "Meds"
+    assert nxt.duration_minutes == 5
+    assert nxt.priority is Priority.HIGH
+    assert nxt.category == "health"
+    assert nxt.time == "09:00"
+    assert nxt.frequency == "daily"
+    assert nxt.status == "pending"  # the fresh occurrence is NOT complete
+
+
+# --- complete_task (recurrence side effects) -------------------------------
+
+def test_complete_task_recurring_appends_next_occurrence():
+    pet = Pet("Rex", "dog")
+    t = Task("Meds", 5, Priority.HIGH, frequency="daily", due_date=date(2026, 7, 7))
+    pet.add_task(t)
+    upcoming = pet.complete_task(t)
+    assert t.status == "complete"            # original marked done
+    assert upcoming is not None
+    assert upcoming in pet.tasks             # next occurrence added
+    assert len(pet.tasks) == 2
+    assert upcoming.due_date == date(2026, 7, 8)
+
+
+def test_complete_task_once_does_not_add_anything():
+    pet = Pet("Rex", "dog")
+    t = Task("Vet visit", 60, Priority.HIGH, frequency="once")
+    pet.add_task(t)
+    upcoming = pet.complete_task(t)
+    assert t.status == "complete"
+    assert upcoming is None
+    assert len(pet.tasks) == 1               # nothing spawned
 
 
 # --- Scheduler helpers -----------------------------------------------------
