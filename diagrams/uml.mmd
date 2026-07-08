@@ -1,15 +1,62 @@
 classDiagram
-    %% Replace the placeholders below with your actual classes, attributes, methods, and relationships.
-    %% Keep this file updated so it matches your final implementation.
+    %% PawPal+ — priority + time-budget scheduler design.
+    %% Owner has an available-time budget; the Scheduler ranks tasks by
+    %% priority (then duration), fits them into the budget, skips the rest,
+    %% and produces a DailyPlan that can explain every decision.
 
-    class ClassName {
-        +type attribute
-        +method() returnType
+    class Priority {
+        <<enumeration>>
+        HIGH
+        MEDIUM
+        LOW
     }
 
-    class AnotherClass {
-        +type attribute
-        +method() returnType
+    class Owner {
+        +str name
+        +int available_minutes
+        +list~str~ preferences
     }
 
-    ClassName --> AnotherClass : relationship
+    class Pet {
+        +str name
+        +str species
+        +str breed
+    }
+
+    class Task {
+        +str title
+        +int duration_minutes
+        +Priority priority
+        +str category
+        +rank() int
+    }
+
+    class PlanItem {
+        +Task task
+        +str start_time
+        +bool included
+        +str reason
+    }
+
+    class DailyPlan {
+        +Pet pet
+        +Owner owner
+        +list~PlanItem~ items
+        +list~PlanItem~ skipped
+        +int total_minutes
+        +explain() str
+    }
+
+    class Scheduler {
+        +int start_hour
+        +build_plan(owner, pet, tasks) DailyPlan
+        -sort_tasks(tasks) list~Task~
+    }
+
+    Owner "1" --> "1" Pet : cares for
+    Task --> Priority : has
+    Scheduler ..> Task : ranks & fits
+    Scheduler ..> Owner : reads budget
+    Scheduler --> DailyPlan : creates
+    DailyPlan "1" *-- "*" PlanItem : contains
+    PlanItem "1" --> "1" Task : wraps
