@@ -140,6 +140,48 @@ class Task:
         """Mark this task as done."""
         self.status = "complete"
 
+    def update(
+        self,
+        title: str | None = None,
+        duration_minutes: int | None = None,
+        priority: Priority | None = None,
+        time: str | None = None,
+        frequency: str | None = None,
+        category: str | None = None,
+    ) -> None:
+        """Edit this task's fields in place; only the arguments given are changed.
+
+        Centralizes editing so the same validation as __init__ applies: a
+        non-positive duration is rejected. Any argument left as None keeps its
+        current value, so callers can change just one field. Status and due_date
+        are intentionally not editable here (use mark_complete / recurrence).
+
+        Args:
+            title: new title, if changing.
+            duration_minutes: new positive duration, if changing.
+            priority: new Priority, if changing.
+            time: new "HH:MM" time (or "" to clear), if changing.
+            frequency: new "once"/"daily"/"weekly", if changing.
+            category: new category, if changing.
+
+        Raises:
+            ValueError: if duration_minutes is given and is not positive.
+        """
+        if duration_minutes is not None:
+            if duration_minutes <= 0:
+                raise ValueError("duration_minutes must be positive")
+            self.duration_minutes = duration_minutes
+        if title is not None:
+            self.title = title
+        if priority is not None:
+            self.priority = priority
+        if time is not None:
+            self.time = time
+        if frequency is not None:
+            self.frequency = frequency
+        if category is not None:
+            self.category = category
+
     def next_occurrence(self) -> Task | None:
         """Return a fresh Task for the next due date, or None if it doesn't repeat.
 
@@ -236,9 +278,27 @@ class Scheduler:
         """Create a scheduler that starts placing tasks at start_hour."""
         self.start_hour = start_hour
 
-    def build_plan(self, owner: Owner) -> DailyPlan:
-        """Greedily fit the owner's ranked pet tasks into their time budget."""
-        ranked = self._sort_tasks(self._collect_tasks(owner))
+    def build_plan(self, owner: Owner, on_date: date | None = None) -> DailyPlan:
+        """Greedily fit the owner's ranked pet tasks into their time budget.
+
+        Only tasks relevant to the target day are scheduled: a task is skipped
+        entirely (not even listed as "skipped") if it is already complete or if
+        its due_date is in the future. This keeps recurring tasks honest — after
+        a daily/weekly task is completed its next occurrence is due later, so it
+        does NOT clutter today's plan. Undated and overdue tasks stay eligible.
+
+        Args:
+            owner: the owner whose pets' tasks are scheduled.
+            on_date: the day to plan for (defaults to today).
+        """
+        today = on_date or date.today()
+        eligible = [
+            (pet, task)
+            for pet, task in self._collect_tasks(owner)
+            if task.status != "complete"
+            and (task.due_date is None or task.due_date <= today)
+        ]
+        ranked = self._sort_tasks(eligible)
 
         remaining = owner.available_minutes
         cursor = self.start_hour * 60  # minutes since midnight

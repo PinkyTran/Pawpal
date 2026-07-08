@@ -3,7 +3,7 @@
 Run from the repo root with: pytest
 """
 
-from datetime import date
+from datetime import date, timedelta
 
 import pytest
 
@@ -41,6 +41,27 @@ def test_mark_complete_changes_status():
     assert task.status == "pending"
     task.mark_complete()
     assert task.status == "complete"
+
+
+def test_update_changes_only_given_fields():
+    """Editing a task changes the supplied fields and leaves the rest intact."""
+    t = Task("Walk", 30, Priority.LOW, time="08:00", frequency="once")
+    t.update(title="Long walk", duration_minutes=45, priority=Priority.HIGH)
+    assert t.title == "Long walk"
+    assert t.duration_minutes == 45
+    assert t.priority is Priority.HIGH
+    assert t.time == "08:00"        # untouched
+    assert t.frequency == "once"    # untouched
+
+
+def test_update_can_clear_time_and_rejects_bad_duration():
+    """Edge: time can be cleared to ''; a non-positive duration is rejected."""
+    t = Task("Meds", 5, Priority.HIGH, time="09:00")
+    t.update(time="")
+    assert t.time == ""
+    with pytest.raises(ValueError):
+        t.update(duration_minutes=0)
+    assert t.duration_minutes == 5  # unchanged after the failed update
 
 
 def test_adding_task_increases_pet_task_count():
@@ -234,6 +255,41 @@ def test_zero_budget_skips_everything():
     assert plan.items == []
     assert len(plan.skipped) == 1
     assert plan.total_minutes == 0
+
+
+def test_plan_excludes_completed_tasks():
+    """A completed task is not scheduled into today's plan at all."""
+    done = Task("done", 10, Priority.HIGH)
+    done.mark_complete()
+    owner = make_owner(100, [("P", [done, Task("todo", 10, Priority.HIGH)])])
+    plan = Scheduler().build_plan(owner)
+    titles = [i.task.title for i in plan.items] + [i.task.title for i in plan.skipped]
+    assert titles == ["todo"]
+
+
+def test_plan_excludes_future_dated_recurring_occurrence():
+    """A recurring task's next (future) occurrence stays out of today's plan."""
+    today = date(2026, 7, 7)
+    pet = Pet("Rex", "dog")
+    meds = Task("meds", 5, Priority.HIGH, frequency="daily", due_date=today)
+    pet.add_task(meds)
+    owner = Owner("O", available_minutes=100, pets=[pet])
+
+    # Completing it marks the original done and spawns tomorrow's occurrence.
+    pet.complete_task(meds)
+    plan = Scheduler().build_plan(owner, on_date=today)
+    # Neither the completed original nor the future occurrence should appear.
+    assert plan.items == [] and plan.skipped == []
+
+
+def test_plan_includes_undated_and_overdue_tasks():
+    """Undated tasks and overdue (past-due) tasks are still scheduled today."""
+    today = date(2026, 7, 7)
+    overdue = Task("overdue", 10, Priority.HIGH, due_date=today - timedelta(days=3))
+    undated = Task("undated", 10, Priority.HIGH)
+    owner = make_owner(100, [("P", [overdue, undated])])
+    plan = Scheduler().build_plan(owner, on_date=today)
+    assert {i.task.title for i in plan.items} == {"overdue", "undated"}
 
 
 def test_owner_with_no_tasks_produces_empty_plan():

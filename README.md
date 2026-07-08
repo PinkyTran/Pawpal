@@ -42,38 +42,83 @@ pip install -r requirements.txt
 6. Connect your logic to the Streamlit UI in `app.py`.
 7. Refine UML so it matches what you actually built.
 
-## 🖥️ Sample Output
+## 🏗️ Classes
 
-Running `python main.py` builds an owner (Jordan) with two pets — Biscuit (dog) and
-Mochi (cat) — and 12 care tasks, then prints the generated plan:
+PawPal+ separates the domain model (in `pawpal_system.py`) from the UI (`app.py`):
+
+| Class | Responsibility | Key attributes | Key methods |
+|-------|----------------|----------------|-------------|
+| `Priority` | Enum ranking a task's importance | `HIGH`, `MEDIUM`, `LOW` | — |
+| `Owner` | The pet owner: time budget + pets | `name`, `available_minutes`, `preferences`, `pets` | `add_pet()`, `filter_tasks()` |
+| `Pet` | A pet and its care tasks | `name`, `species`, `breed`, `color`, `age`, `tasks` | `add_task()`, `complete_task()` |
+| `Task` | One care activity | `title`, `duration_minutes`, `priority`, `time`, `frequency`, `due_date`, `status` | `rank()`, `mark_complete()`, `next_occurrence()` |
+| `PlanItem` | One scheduling decision | `task`, `pet`, `start_time`, `included`, `reason` | — |
+| `DailyPlan` | The scheduled + skipped result | `owner`, `items`, `skipped`, `total_minutes` | `explain()` |
+| `Scheduler` | Ranks and fits tasks across all pets | `start_hour` | `build_plan()`, `sort_by_time()`, `detect_conflicts()` |
+
+Relationships: an `Owner` has many `Pet`s, each `Pet` owns many `Task`s, and the
+`Scheduler` reads an `Owner` to produce a `DailyPlan` of `PlanItem`s. See
+[`diagrams/uml_final.mmd`](diagrams/uml_final.mmd) for the full class diagram.
+
+## 🖥️ Running the demo
+
+```bash
+python main.py
+```
+
+This builds an owner (Jordan) with two pets — Biscuit (dog) and Mochi (cat), plus a
+third pet (Rex) for the recurrence demo — adds several care tasks (some out of time
+order and some deliberately clashing), then exercises the scheduler, conflict
+detection, sorting, filtering, and recurring tasks:
 
 ```
-================================================
+====================================================
 Today's Schedule
-================================================
-Daily plan for Jordan (budget: 200 min, used: 190 min)
+====================================================
+Daily plan for Jordan (budget: 120 min, used: 115 min)
 
 Scheduled:
   08:00 — Medication for Mochi (5 min) [priority: high] — high priority, fits the remaining time
   08:05 — Feeding for Biscuit (10 min) [priority: high] — high priority, fits the remaining time
-  08:15 — Evening feeding for Mochi (10 min) [priority: high] — high priority, fits the remaining time
+  08:15 — Breakfast for Mochi (10 min) [priority: high] — high priority, fits the remaining time
   08:25 — Morning walk for Biscuit (30 min) [priority: high] — high priority, fits the remaining time
-  08:55 — Litter box cleaning for Mochi (10 min) [priority: medium] — medium priority, fits the remaining time
-  09:05 — Enrichment puzzle for Biscuit (20 min) [priority: medium] — medium priority, fits the remaining time
-  09:25 — Training session for Biscuit (20 min) [priority: medium] — medium priority, fits the remaining time
-  09:45 — Evening walk for Biscuit (30 min) [priority: medium] — medium priority, fits the remaining time
-  10:15 — Play session for Mochi (15 min) [priority: low] — low priority, fits the remaining time
-  10:30 — Window watching for Mochi (15 min) [priority: low] — low priority, fits the remaining time
-  10:45 — Grooming for Biscuit (25 min) [priority: low] — low priority, fits the remaining time
+  08:55 — Backyard potty for Biscuit (5 min) [priority: medium] — medium priority, fits the remaining time
+  09:00 — Litter box cleaning for Mochi (10 min) [priority: medium] — medium priority, fits the remaining time
+  09:10 — Evening walk for Biscuit (30 min) [priority: medium] — medium priority, fits the remaining time
+  09:40 — Play session for Mochi (15 min) [priority: low] — low priority, fits the remaining time
 
 Skipped:
-  Bath for Biscuit (40 min) [priority: low] — needs 40 min but only 10 min left
+  Grooming for Biscuit (25 min) [priority: low] — needs 25 min but only 5 min left
+
+====================================================
+Schedule Conflicts
+====================================================
+⚠️ Conflict at 07:30: 'Feeding' (Biscuit), 'Breakfast' (Mochi)
+⚠️ Conflict at 08:00: 'Morning walk' (Biscuit), 'Backyard potty' (Biscuit)
+
+Biscuit's tasks SORTED BY TIME:
+  07:30 — Feeding (10 min) [high] status=pending
+  08:00 — Morning walk (30 min) [high] status=pending
+  08:00 — Backyard potty (5 min) [medium] status=pending
+  13:00 — Grooming (25 min) [low] status=pending
+  18:00 — Evening walk (30 min) [medium] status=pending
+
+====================================================
+Recurring Tasks
+====================================================
+Before completing anything, Rex has 2 task(s).
+  Completed 'Daily meds' (daily) -> next due: 2026-07-08
+  Completed 'Weekly bath' (weekly) -> next due: 2026-07-14
+After completing them, Rex has 4 task(s) (the auto-created next occurrences).
 ```
 
 Tasks are scheduled highest-priority first (ties broken by shorter duration), packed
-back-to-back from 08:00 until the owner's time budget runs out. Here every HIGH and
-MEDIUM task fits; among the LOW tasks, only **Bath** (40 min) is skipped because just
-10 minutes remained — the plan explains that reason for every task.
+back-to-back from 08:00 until the budget runs out — here **Grooming** is skipped
+because only 5 minutes remained. Conflict detection then flags same-time clashes
+(both within one pet and across pets), `sort_by_time()` reorders the out-of-order
+tasks, and completing a `daily`/`weekly` task auto-spawns its next occurrence.
+
+*(Output above is trimmed slightly; the filtering section is omitted for brevity.)*
 
 ## 🧪 Testing PawPal+
 
@@ -91,17 +136,21 @@ Sample test output:
 ============================= test session starts ==============================
 platform darwin -- Python 3.13.7, pytest-9.1.1, pluggy-1.6.0
 rootdir: /Users/trang/Documents/AI101/Pawpal
-collected 25 items
+collected 42 items
 
-tests/test_pawpal.py .........................                          [100%]
+tests/test_pawpal.py ..........................................          [100%]
 
-============================== 25 passed in 0.02s ==============================
+============================== 42 passed in 0.02s ==============================
 ```
 
-The suite covers ranking, sorting (including deterministic tie-breaking), the
-time-budget cutoff and skip reasons, `mark_complete()`, `add_task()`, recurring
-tasks (`next_occurrence()` / `complete_task()`, including month/year rollover),
-and edge cases like a zero-minute budget and a pet with no tasks.
+The 42 tests cover ranking, sorting by priority-then-duration (including
+deterministic tie-breaking), chronological `sort_by_time()` (untimed tasks last,
+no mutation), filtering by status/pet, conflict detection (same-pet and cross-pet),
+the time-budget cutoff and skip reasons, editing a task in place (`Task.update()`),
+`mark_complete()`, `add_task()`, recurring tasks (`next_occurrence()` /
+`complete_task()`, including month/year rollover), the "today only" planning filter
+(completed and future-dated occurrences excluded), and edge cases like a zero-minute
+budget, an owner with no pets, and a pet with no tasks.
 
 ## 📐 Smarter Scheduling
 

@@ -1,3 +1,5 @@
+from datetime import time as dtime
+
 import streamlit as st
 
 from pawpal_system import Owner, Pet, Priority, Scheduler, Task
@@ -91,6 +93,17 @@ if owner.pets:
             task_priority = st.selectbox("Priority", PRIORITIES, index=0)
         with tc5:
             task_frequency = st.selectbox("Repeats", ["once", "daily", "weekly"], index=0)
+        tc6, tc7 = st.columns([1, 2])
+        with tc6:
+            # NOTE: don't gate the time input with disabled=. Widgets inside a
+            # st.form don't rerun on change, so a disabled= that depends on this
+            # checkbox would never re-enable until submit. Instead the input is
+            # always editable and the checkbox just decides whether we apply it.
+            task_timed = st.checkbox("Set a time")
+        with tc7:
+            # st.time_input yields a real time object, so we always store a
+            # zero-padded "HH:MM" string that sorts and compares correctly.
+            task_time_val = st.time_input("Time of day", value=dtime(9, 0))
 
         if st.form_submit_button("Add task") and task_title.strip():
             pet = next(p for p in owner.pets if p.name == task_pet_name)
@@ -100,6 +113,7 @@ if owner.pets:
                     duration_minutes=int(task_duration),
                     priority=PRIORITY_ENUM[task_priority],
                     frequency=task_frequency,
+                    time=task_time_val.strftime("%H:%M") if task_timed else "",
                 )
             )
 
@@ -123,6 +137,8 @@ if owner.pets:
                     title = f"~~{t.title}~~" if done else t.title
                     r1.markdown(f"{'✅' if done else '⬜'} {title}")
                     meta = f"{t.duration_minutes} min · {t.priority.value}"
+                    if t.time:
+                        meta += f" · 🕐 {t.time}"
                     if t.frequency != "once":
                         meta += f" · 🔁 {t.frequency}"
                     r2.caption(meta)
@@ -134,16 +150,96 @@ if owner.pets:
                         if nxt is not None:
                             st.toast(f"Next {t.title} scheduled for {nxt.due_date}")
                         st.rerun()
+
+                    # --- edit ("fix") an already-added task ----------------
+                    with st.expander("✏️ Edit", expanded=False):
+                        with st.form(f"edit_{pet.name}_{idx}", clear_on_submit=False):
+                            e_title = st.text_input("Task", value=t.title)
+                            ec1, ec2 = st.columns(2)
+                            with ec1:
+                                e_duration = st.number_input(
+                                    "Min", min_value=1, max_value=240,
+                                    value=t.duration_minutes,
+                                )
+                            with ec2:
+                                e_priority = st.selectbox(
+                                    "Priority", PRIORITIES,
+                                    index=PRIORITIES.index(t.priority.value),
+                                )
+                            ec3, ec4 = st.columns(2)
+                            with ec3:
+                                e_frequency = st.selectbox(
+                                    "Repeats", ["once", "daily", "weekly"],
+                                    index=["once", "daily", "weekly"].index(t.frequency),
+                                )
+                            with ec4:
+                                e_timed = st.checkbox(
+                                    "Set a time", value=bool(t.time),
+                                    key=f"edit_timed_{pet.name}_{idx}",
+                                )
+                            # Always editable (see note in the add-task form):
+                            # the checkbox decides whether the time is applied.
+                            e_time_val = st.time_input(
+                                "Time of day",
+                                value=(
+                                    dtime(*map(int, t.time.split(":")))
+                                    if t.time else dtime(9, 0)
+                                ),
+                            )
+                            if st.form_submit_button("Save changes") and e_title.strip():
+                                # One validated method updates the task in place.
+                                t.update(
+                                    title=e_title.strip(),
+                                    duration_minutes=int(e_duration),
+                                    priority=PRIORITY_ENUM[e_priority],
+                                    frequency=e_frequency,
+                                    time=e_time_val.strftime("%H:%M") if e_timed else "",
+                                )
+                                st.toast(f"Updated '{t.title}'.")
+                                st.rerun()
                 if st.button(f"Clear {pet.name}'s tasks", key=f"clear_{pet.name}"):
                     pet.tasks.clear()
                     st.rerun()
             else:
                 st.caption("No tasks yet.")
 
+    # --- timeline + conflicts (both straight from the Scheduler) -----------
+    st.divider()
+    st.subheader("4. Timeline & conflicts")
+
+    # Conflict detection: the Scheduler flags any duplicate time slots for us.
+    conflicts = Scheduler().detect_conflicts(owner)
+    if conflicts:
+        for warning in conflicts:
+            st.warning(warning)
+    else:
+        st.success("No time conflicts — every scheduled time is unique.")
+
+    # Chronological view: Scheduler.sort_by_time orders timed tasks and pushes
+    # untimed ones to the end. We map each task back to its pet for display.
+    pet_of = {id(task): pet for pet in owner.pets for task in pet.tasks}
+    ordered = Scheduler.sort_by_time(owner.filter_tasks())
+    if ordered:
+        st.table(
+            [
+                {
+                    "Time": task.time or "—",
+                    "Task": task.title,
+                    "Pet": pet_of[id(task)].name,
+                    "Min": task.duration_minutes,
+                    "Priority": task.priority.value,
+                    "Status": "✅ done" if task.status == "complete" else "pending",
+                }
+                for task in ordered
+            ]
+        )
+    else:
+        st.info("Add a task to see the daily timeline.")
+
 st.divider()
 
 # --- generate the plan -----------------------------------------------------
-st.subheader("4. Today's plan")
+st.subheader("5. Today's plan")
 st.caption("Tasks are scheduled highest-priority first and packed into your time budget.")
 
 if st.button("Generate schedule", type="primary", disabled=not owner.pets):
@@ -155,6 +251,11 @@ if st.button("Generate schedule", type="primary", disabled=not owner.pets):
     m2.metric("Scheduled", len(plan.items))
     m3.metric("Skipped", len(plan.skipped))
 
+    st.caption(
+        "Only tasks due today (or undated/overdue) are planned — completed tasks "
+        "and future occurrences of recurring tasks are left out."
+    )
+
     if plan.items:
         st.markdown("#### ✅ Scheduled")
         st.table(
@@ -165,6 +266,7 @@ if st.button("Generate schedule", type="primary", disabled=not owner.pets):
                     "Pet": i.pet.name,
                     "Min": i.task.duration_minutes,
                     "Priority": i.task.priority.value,
+                    "Repeats": "once" if i.task.frequency == "once" else f"🔁 {i.task.frequency}",
                 }
                 for i in plan.items
             ]

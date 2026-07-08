@@ -82,16 +82,18 @@ of changing correct code. I verified behavior by running `python main.py` and
 **a. What you tested**
 
 I tested: priority ranking order; sorting by priority then duration; stable
-(deterministic) ordering for ties; the budget cutoff and the skip reasons; the
-greedy "fill leftover time" behavior; `total_minutes` accounting; sequential
-start times; `mark_complete()` changing status; `add_task()` growing a pet's
-task count; and edge cases (zero budget, a pet with no tasks). These matter
-because they're the behaviors a user actually relies on — that the important
-tasks come first and that nothing silently disappears without a reason.
+(deterministic) ordering for ties; chronological `sort_by_time()`; filtering by
+status and pet; conflict detection (same-pet and cross-pet); the budget cutoff
+and the skip reasons; the greedy "fill leftover time" behavior; `total_minutes`
+accounting; sequential start times; `mark_complete()` changing status;
+`add_task()` growing a pet's task count; recurring tasks; and edge cases (zero
+budget, an owner with no pets, a pet with no tasks). These matter because they're
+the behaviors a user actually relies on — that the important tasks come first and
+that nothing silently disappears without a reason.
 
 **b. Confidence**
 
-Fairly confident — 15 tests pass and cover the core paths. With more time I'd
+Fairly confident — 42 tests pass and cover the core paths. With more time I'd
 test time-sensitive tasks (e.g. medication that must happen at a fixed hour),
 multiple pets competing for the same budget more aggressively, and rollover past
 midnight when the budget is very large.
