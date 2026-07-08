@@ -243,6 +243,137 @@ def test_owner_with_no_tasks_produces_empty_plan():
     assert isinstance(plan, DailyPlan)
 
 
+# --- sort_by_time ----------------------------------------------------------
+
+def test_sort_by_time_orders_chronologically():
+    """Happy path: timed tasks come back in time-of-day order."""
+    tasks = [
+        Task("noon", 10, Priority.LOW, time="12:00"),
+        Task("morning", 10, Priority.LOW, time="08:30"),
+        Task("evening", 10, Priority.LOW, time="18:00"),
+    ]
+    ordered = Scheduler.sort_by_time(tasks)
+    assert [t.title for t in ordered] == ["morning", "noon", "evening"]
+
+
+def test_sort_by_time_puts_untimed_tasks_last():
+    """Edge: tasks with no time fall to the end, not the front."""
+    tasks = [
+        Task("untimed", 10, Priority.LOW),           # time == ""
+        Task("early", 10, Priority.LOW, time="07:00"),
+    ]
+    ordered = Scheduler.sort_by_time(tasks)
+    assert [t.title for t in ordered] == ["early", "untimed"]
+
+
+def test_sort_by_time_does_not_mutate_input():
+    """Edge: sorting returns a new list and leaves the caller's list alone."""
+    tasks = [
+        Task("late", 10, Priority.LOW, time="20:00"),
+        Task("early", 10, Priority.LOW, time="06:00"),
+    ]
+    original_order = list(tasks)
+    Scheduler.sort_by_time(tasks)
+    assert tasks == original_order
+
+
+def test_sort_by_time_empty_list():
+    """Edge: no tasks -> empty list, no error."""
+    assert Scheduler.sort_by_time([]) == []
+
+
+# --- detect_conflicts (two tasks at the same time) -------------------------
+
+def test_detect_conflicts_none_when_times_differ():
+    """Happy path: distinct time slots -> no warnings."""
+    owner = make_owner(
+        100,
+        [("P", [Task("a", 10, Priority.HIGH, time="08:00"),
+                Task("b", 10, Priority.HIGH, time="09:00")])],
+    )
+    assert Scheduler().detect_conflicts(owner) == []
+
+
+def test_detect_conflicts_flags_same_time_same_pet():
+    """Edge: two tasks on one pet share a slot -> one warning naming both."""
+    owner = make_owner(
+        100,
+        [("Rex", [Task("walk", 10, Priority.HIGH, time="08:00"),
+                  Task("meds", 5, Priority.HIGH, time="08:00")])],
+    )
+    warnings = Scheduler().detect_conflicts(owner)
+    assert len(warnings) == 1
+    assert "08:00" in warnings[0]
+    assert "walk" in warnings[0] and "meds" in warnings[0]
+
+
+def test_detect_conflicts_flags_same_time_across_pets():
+    """Edge: the clash spans two different pets, not just one."""
+    owner = make_owner(
+        100,
+        [("Rex", [Task("walk", 10, Priority.HIGH, time="07:30")]),
+         ("Mochi", [Task("feed", 5, Priority.HIGH, time="07:30")])],
+    )
+    warnings = Scheduler().detect_conflicts(owner)
+    assert len(warnings) == 1
+    assert "Rex" in warnings[0] and "Mochi" in warnings[0]
+
+
+def test_detect_conflicts_ignores_untimed_tasks():
+    """Edge: untimed tasks can never conflict, even if there are several."""
+    owner = make_owner(
+        100,
+        [("P", [Task("a", 10, Priority.HIGH), Task("b", 10, Priority.HIGH)])],
+    )
+    assert Scheduler().detect_conflicts(owner) == []
+
+
+# --- filter_tasks ----------------------------------------------------------
+
+def test_filter_tasks_returns_everything_with_no_filters():
+    """Happy path: no filters -> every task across every pet."""
+    owner = make_owner(
+        100,
+        [("Rex", [Task("a", 10, Priority.HIGH)]),
+         ("Mochi", [Task("b", 10, Priority.LOW), Task("c", 5, Priority.LOW)])],
+    )
+    assert len(owner.filter_tasks()) == 3
+
+
+def test_filter_tasks_by_status_and_pet():
+    """Edge: filters combine (AND) across status and pet name."""
+    done = Task("done", 10, Priority.HIGH)
+    done.mark_complete()
+    owner = make_owner(
+        100,
+        [("Rex", [done, Task("pending", 10, Priority.HIGH)]),
+         ("Mochi", [Task("other", 10, Priority.LOW)])],
+    )
+    assert [t.title for t in owner.filter_tasks(status="complete")] == ["done"]
+    assert {t.title for t in owner.filter_tasks(pet_name="Rex")} == {"done", "pending"}
+    assert owner.filter_tasks(status="complete", pet_name="Mochi") == []
+
+
+# --- multi-pet / empty-owner edges -----------------------------------------
+
+def test_build_plan_owner_with_no_pets():
+    """Edge: an owner with zero pets plans an empty day without erroring."""
+    owner = Owner("Petless", available_minutes=100, pets=[])
+    plan = Scheduler().build_plan(owner)
+    assert plan.items == [] and plan.skipped == []
+
+
+def test_build_plan_ranks_across_multiple_pets():
+    """Happy path: ranking is global across pets, not per-pet."""
+    owner = make_owner(
+        100,
+        [("Rex", [Task("rex-low", 10, Priority.LOW)]),
+         ("Mochi", [Task("mochi-high", 10, Priority.HIGH)])],
+    )
+    plan = Scheduler().build_plan(owner)
+    assert plan.items[0].task.title == "mochi-high"
+
+
 # --- explain ---------------------------------------------------------------
 
 def test_explain_names_pet_and_reports_budget():
